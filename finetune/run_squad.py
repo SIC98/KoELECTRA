@@ -29,6 +29,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from fastprogress.fastprogress import master_bar, progress_bar
 from attrdict import AttrDict
+from torch.nn import DataParallel
 
 from src import (
     eval_during_train,
@@ -165,9 +166,9 @@ def train(args, train_dataset, model, tokenizer):
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
-            loss.backward()
+            loss.sum().backward()
 
-            tr_loss += loss.item()
+            tr_loss += loss.sum().item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
@@ -423,7 +424,8 @@ def main(cli_args):
         config=config,
     )
     # GPU or CPU
-    args.device = "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu"
+    model = DataParallel(model)
+    args.device = f"cuda:{model.device_ids[0]}" if torch.cuda.is_available() and not args.no_cuda else "cpu"
     model.to(args.device)
 
     logger.info("Training/evaluation parameters %s", args)
